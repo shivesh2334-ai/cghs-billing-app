@@ -4,8 +4,8 @@ import { useState, useRef, useCallback } from 'react';
 import type { BillingResult, InputForm, BillingCode, MissedCode } from '@/lib/types';
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
-const Icon = ({ path, size = 16, className = '' }: { path: string; size?: number; className?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+const Icon = ({ path, size = 16, className = '', style }: { path: string; size?: number; className?: string; style?: React.CSSProperties }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
     <path d={path} />
   </svg>
 );
@@ -242,7 +242,7 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #1a4b8e 0%, #0e3060 100%)', border: '1px solid rgba(61,142,245,0.3)' }}>
-              <Icon path={icons.activity} size={15} className="" style={{ color: '#7ab8ff' } as React.CSSProperties} />
+              <Icon path={icons.activity} size={15} className="" style={{ color: '#7ab8ff' }} />
             </div>
             <div>
               <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
@@ -401,7 +401,7 @@ export default function Home() {
 
               {error && (
                 <div className="mt-3 p-3 rounded-xl flex items-start gap-2" style={{ background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)' }}>
-                  <Icon path={icons.xCircle} size={14} style={{ color: '#f43f5e', flexShrink: 0, marginTop: '1px' } as React.CSSProperties} />
+                  <Icon path={icons.xCircle} size={14} style={{ color: '#f43f5e', flexShrink: 0, marginTop: '1px' }} />
                   <p className="text-xs" style={{ color: '#fb7185' }}>{error}</p>
                 </div>
               )}
@@ -413,7 +413,7 @@ export default function Home() {
             {!result && !loading && (
               <div className="glass-card rounded-2xl p-8 flex flex-col items-center justify-center text-center" style={{ minHeight: '400px' }}>
                 <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ background: 'rgba(61,142,245,0.08)', border: '1px solid var(--border-subtle)' }}>
-                  <Icon path={icons.clipboard} size={28} style={{ color: 'var(--text-muted)' } as React.CSSProperties} />
+                  <Icon path={icons.clipboard} size={28} style={{ color: 'var(--text-muted)' }} />
                 </div>
                 <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-display)' }}>
                   Ready to Code
@@ -428,7 +428,7 @@ export default function Home() {
                     { icon: icons.alert, label: 'Missed Code Detection' },
                   ].map(item => (
                     <div key={item.label} className="rounded-xl p-3 text-center" style={{ background: 'rgba(99,160,255,0.05)', border: '1px solid var(--border-subtle)' }}>
-                      <Icon path={item.icon} size={18} style={{ color: 'var(--accent-blue)', margin: '0 auto 6px' } as React.CSSProperties} />
+                      <Icon path={item.icon} size={18} style={{ color: 'var(--accent-blue)', margin: '0 auto 6px' }} />
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{item.label}</p>
                     </div>
                   ))}
@@ -593,7 +593,7 @@ export default function Home() {
                     <ul className="space-y-1.5">
                       {result.documentation_requirements.map((req, i) => (
                         <li key={i} className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                          <Icon path={icons.check} size={11} style={{ color: 'var(--accent-emerald)', flexShrink: 0 } as React.CSSProperties} />
+                          <Icon path={icons.check} size={11} style={{ color: 'var(--accent-emerald)', flexShrink: 0 }} />
                           {req}
                         </li>
                       ))}
