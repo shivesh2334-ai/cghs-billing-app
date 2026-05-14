@@ -1,19 +1,17 @@
-import type { Metadata } from 'next';
+'use client';
+
+import type { ReactNode } from 'react';
 import './globals.css';
 
-export const metadata: Metadata = {
-  title: 'CGHS BillingAssist',
-  description:
-    'AI-Powered Medical Billing Code Optimizer for CGHS, ESI, ECHS schemes. Describe any surgery, procedure, or diagnostic test in plain language and get accurate CGHS billing codes with revenue optimization.',
-};
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="CGHS BillingAssist — AI-Powered Medical Billing Code Optimizer" />
+        <title>CGHS BillingAssist</title>
+      </head>
       <body>{children}</body>
     </html>
   );
