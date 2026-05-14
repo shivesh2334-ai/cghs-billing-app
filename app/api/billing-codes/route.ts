@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Initialize Anthropic client with proper error handling
+const getAnthropicClient = () => {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      'ANTHROPIC_API_KEY is not set. Please add it to your environment variables in Vercel dashboard or .env.local'
+    );
+  }
+  return new Anthropic({ apiKey });
+};
 
 const SYSTEM_PROMPT = `You are an expert medical billing specialist with deep knowledge of the Central Government Health Scheme (CGHS) billing system in India. You have 20+ years of experience in medical billing and coding.
 
-Your task is to analyze clinical inputs describing surgeries, procedures, diagnostic tests, consultations, and other medical services, and provide comprehensive CGHS billing codes with revenue optimization suggestions.
+Your task is to analyze clinical inputs describing surgeries, procedures, diagnostic tests, consultations, and other medical services, and provide comprehensive CGHS billing codes with revenue optimization recommendations.
 
 ## CGHS Billing System Knowledge Base:
 
@@ -178,100 +185,107 @@ You MUST respond with ONLY valid JSON (no markdown, no backticks, no explanation
 10. Revenue impact: high = >₹5000, medium = ₹1000-5000, low = <₹1000
 11. Confidence score based on clarity of input (70-100 range typically)`;
 
-// Request rate limiting
-const requestCounts = new Map<string, { count: number; resetTime: number }>();
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const record = requestCounts.get(ip);
-
-  if (!record || now > record.resetTime) {
-    requestCounts.set(ip, { count: 1, resetTime: now + 60000 }); // 60 second window
-    return true;
-  }
-
-  if (record.count >= 10) {
-    return false; // Max 10 requests per minute
-  }
-
-  record.count++;
-  return true;
-}
-
-function validateRequest(body: unknown): body is {
-  clinical_input: string;
+interface BillingRequest {
+  clinical_input?: string;
   patient_type?: string;
   ward_type?: string;
   hospital_type?: string;
-} {
-  if (typeof body !== 'object' || body === null) {
-    return false;
-  }
+}
 
-  const obj = body as Record<string, unknown>;
+interface BillingCodeResponse {
+  code: string;
+  description: string;
+  category: string;
+  cghs_rate_inr: number;
+  cghs_rate_range?: { min: number; max: number };
+  icd10_code?: string;
+  cpt_equivalent?: string;
+  ward_type?: string;
+  notes?: string;
+  revenue_impact: string;
+  confidence: number;
+  is_primary: boolean;
+  requires_pre_auth?: boolean;
+}
+
+interface BillingResult {
+  input_summary: string;
+  identified_procedures: string[];
+  primary_codes: BillingCodeResponse[];
+  additional_codes: BillingCodeResponse[];
+  missed_codes: Array<{
+    code: string;
+    description: string;
+    category: string;
+    cghs_rate_inr: number;
+    reason: string;
+    revenue_impact: string;
+    priority: string;
+  }>;
+  total_estimated_revenue: {
+    min: number;
+    max: number;
+    optimal: number;
+  };
+  revenue_optimization_tips: string[];
+  documentation_requirements: string[];
+  pre_auth_required: boolean;
+  pre_auth_codes: string[];
+  disclaimer: string;
+}
+
+// Validate response structure
+function validateBillingResult(data: unknown): data is BillingResult {
+  if (typeof data !== 'object' || data === null) return false;
+  const obj = data as Record<string, unknown>;
+  
   return (
-    typeof obj.clinical_input === 'string' &&
-    (obj.patient_type === undefined || typeof obj.patient_type === 'string') &&
-    (obj.ward_type === undefined || typeof obj.ward_type === 'string') &&
-    (obj.hospital_type === undefined || typeof obj.hospital_type === 'string')
+    typeof obj.input_summary === 'string' &&
+    Array.isArray(obj.identified_procedures) &&
+    Array.isArray(obj.primary_codes) &&
+    Array.isArray(obj.additional_codes) &&
+    Array.isArray(obj.missed_codes) &&
+    typeof obj.total_estimated_revenue === 'object' &&
+    Array.isArray(obj.revenue_optimization_tips) &&
+    Array.isArray(obj.documentation_requirements) &&
+    typeof obj.pre_auth_required === 'boolean' &&
+    Array.isArray(obj.pre_auth_codes) &&
+    typeof obj.disclaimer === 'string'
   );
 }
 
 export async function POST(request: NextRequest) {
-  const startTime = Date.now();
-
   try {
-    // Check environment variable
-    if (!process.env.ANTHROPIC_API_KEY) {
-      console.error('Missing ANTHROPIC_API_KEY environment variable');
-      return NextResponse.json(
-        { error: 'API configuration error. Please check server logs.' },
-        { status: 500 }
-      );
-    }
-
-    // Rate limiting
-    const ip = request.headers.get('x-forwarded-for') || 'unknown';
-    if (!checkRateLimit(ip)) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Please try again later.' },
-        { status: 429 }
-      );
-    }
-
-    // Parse and validate request body
-    let body: unknown;
+    // Validate request
+    let body: BillingRequest;
     try {
       body = await request.json();
-    } catch (e) {
+    } catch {
       return NextResponse.json(
         { error: 'Invalid JSON in request body' },
         { status: 400 }
       );
     }
 
-    if (!validateRequest(body)) {
-      return NextResponse.json(
-        { error: 'Missing or invalid clinical_input field' },
-        { status: 400 }
-      );
-    }
+    const { clinical_input, patient_type = 'CGHS', ward_type = 'general', hospital_type = 'empanelled_private' } = body;
 
-    const { clinical_input, patient_type = 'cghs', ward_type = 'general', hospital_type = 'empanelled_private' } = body;
-
-    // Validate clinical input length
-    const trimmedInput = clinical_input.trim();
-    if (trimmedInput.length < 3) {
+    // Validate clinical input
+    if (!clinical_input || typeof clinical_input !== 'string' || clinical_input.trim().length < 3) {
       return NextResponse.json(
         { error: 'Please provide clinical procedure details (minimum 3 characters)' },
         { status: 400 }
       );
     }
 
-    if (trimmedInput.length > 5000) {
+    // Get Anthropic client
+    let client;
+    try {
+      client = getAnthropicClient();
+    } catch (error) {
+      console.error('Failed to initialize Anthropic client:', error);
       return NextResponse.json(
-        { error: 'Clinical input exceeds maximum length (5000 characters)' },
-        { status: 400 }
+        { error: 'API key configuration error. Please check environment variables.' },
+        { status: 500 }
       );
     }
 
@@ -281,96 +295,100 @@ Ward Type: ${String(ward_type)}
 Hospital Type: ${String(hospital_type)}
 
 Clinical Input / Procedures Performed:
-${trimmedInput}
+${clinical_input.trim()}
 
-Please analyze this and provide comprehensive CGHS billing codes with revenue optimization. Identify ALL billable components including the main procedure, anesthesia, pre-op tests, post-op care, ICU charges, implants if applicable, and any other billable services.
+Please analyze this and provide comprehensive CGHS billing codes with revenue optimization. Identify ALL billable components including the main procedure, anesthesia, pre-op tests, post-op care, implants, ICU stays, and any additional services.
 `;
 
-    // Call Anthropic API
-    const response = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: userMessage,
-        },
-      ],
-    });
+    // Call Anthropic API with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-    // Extract text response
+    let response;
+    try {
+      response = await client.messages.create({
+        model: 'claude-opus-4-5',
+        max_tokens: 4096,
+        system: SYSTEM_PROMPT,
+        messages: [
+          {
+            role: 'user',
+            content: userMessage,
+          },
+        ],
+      });
+    } catch (error) {
+      clearTimeout(timeoutId);
+      console.error('Anthropic API error:', error);
+      
+      if (error instanceof Error) {
+        if (error.message.includes('APIConnectionError')) {
+          return NextResponse.json(
+            { error: 'Failed to connect to AI service. Please try again.' },
+            { status: 503 }
+          );
+        }
+        if (error.message.includes('AuthenticationError')) {
+          return NextResponse.json(
+            { error: 'API authentication failed. Please check your API key.' },
+            { status: 401 }
+          );
+        }
+        if (error.message.includes('RateLimitError')) {
+          return NextResponse.json(
+            { error: 'Rate limit reached. Please wait a moment and try again.' },
+            { status: 429 }
+          );
+        }
+      }
+      
+      return NextResponse.json(
+        { error: 'Failed to process request with AI service' },
+        { status: 500 }
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    // Extract and validate text response
     const textContent = response.content.find((c) => c.type === 'text');
     if (!textContent || textContent.type !== 'text') {
-      console.error('No text response from Claude API');
-      return NextResponse.json(
-        { error: 'Failed to get valid response from AI service' },
-        { status: 500 }
-      );
-    }
-
-    // Parse JSON response
-    let result: unknown;
-    try {
-      const cleanText = textContent.text
-        .replace(/```json\n?/g, '')
-        .replace(/```\n?/g, '')
-        .trim();
-      result = JSON.parse(cleanText);
-    } catch (parseError) {
-      console.error('JSON parse error:', parseError, 'Raw text:', textContent.text.substring(0, 200));
-      return NextResponse.json(
-        { error: 'Failed to parse AI response. Please try again.' },
-        { status: 500 }
-      );
-    }
-
-    // Validate response structure
-    if (!isValidBillingResult(result)) {
-      console.error('Invalid billing result structure:', result);
       return NextResponse.json(
         { error: 'Invalid response format from AI service' },
         { status: 500 }
       );
     }
 
-    const duration = Date.now() - startTime;
-    console.log(`[SUCCESS] Billing codes generated in ${duration}ms for patient type: ${patient_type}`);
+    // Parse and validate JSON
+    let result: BillingResult;
+    try {
+      const cleanText = textContent.text
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .trim();
+      
+      const parsed = JSON.parse(cleanText);
+      
+      if (!validateBillingResult(parsed)) {
+        throw new Error('Response does not match expected BillingResult schema');
+      }
+      
+      result = parsed;
+    } catch (error) {
+      console.error('JSON parsing error:', error);
+      return NextResponse.json(
+        { error: 'Failed to parse AI response. Please try again.' },
+        { status: 500 }
+      );
+    }
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, { status: 200 });
   } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(`[ERROR] Billing codes API error after ${duration}ms:`, error);
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Internal server error';
-
+    console.error('Billing codes API error:', error);
+    const message = error instanceof Error ? error.message : 'Internal server error';
     return NextResponse.json(
-      { error: message },
+      { error: message || 'An unexpected error occurred' },
       { status: 500 }
     );
   }
-}
-
-function isValidBillingResult(obj: unknown): obj is Record<string, unknown> {
-  if (typeof obj !== 'object' || obj === null) {
-    return false;
-  }
-
-  const result = obj as Record<string, unknown>;
-  return (
-    typeof result.input_summary === 'string' &&
-    Array.isArray(result.identified_procedures) &&
-    Array.isArray(result.primary_codes) &&
-    Array.isArray(result.additional_codes) &&
-    Array.isArray(result.missed_codes) &&
-    typeof result.total_estimated_revenue === 'object' &&
-    Array.isArray(result.revenue_optimization_tips) &&
-    Array.isArray(result.documentation_requirements) &&
-    typeof result.pre_auth_required === 'boolean' &&
-    Array.isArray(result.pre_auth_codes) &&
-    typeof result.disclaimer === 'string'
-  );
 }

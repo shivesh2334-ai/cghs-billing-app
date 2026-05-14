@@ -1,34 +1,29 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Production optimizations
-  reactStrictMode: true,
+  // Enable SWR optimization
   swcMinify: true,
-  // API routes configuration
-  onDemandEntries: {
-    maxInactiveAge: 60 * 1000,
-    pagesBufferLength: 5,
+  
+  // Optimize images
+  images: {
+    optimization: true,
+    unoptimized: false,
   },
-  // Headers for security
+  
+  // Security headers
   async headers() {
     return [
       {
         source: '/api/:path*',
         headers: [
-          {
-            key: 'Cache-Control',
-            value: 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          },
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
+          { key: 'Cache-Control', value: 'no-store' },
         ],
       },
     ];
+  },
+  
+  // Redirect HTTP to HTTPS in production
+  async redirects() {
+    return [];
   },
 };
 
